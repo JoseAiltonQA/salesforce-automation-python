@@ -1,0 +1,10 @@
+behave
+selenium
+webdriver-manager
+python-dotenv
+requests
+allure-behave
+pytest
+pytest-playwright
+playwright
+httpx
