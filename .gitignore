@@ -50,12 +50,14 @@ $RECYCLE.BIN/
 # Python cache and pytest
 **/*.pyc
 **/.pytest_cache/
+reports/
 
 # Playwright/Allure reports
 **/.playwright/
 **/playwright-report/
 **/test-results/
 **/allure-results/
+**/allure-report/
 
 # IDEs
 **/.idea/

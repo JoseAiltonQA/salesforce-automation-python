@@ -3,8 +3,14 @@ selenium
 webdriver-manager
 python-dotenv
 requests
-allure-behave
 pytest
 pytest-playwright
 playwright
 httpx
+allure-behave
+allure-pytest
+pytest-json-report
+pytest-cov
+flake8
+Faker
+validate-docbr

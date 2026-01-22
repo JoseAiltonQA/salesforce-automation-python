@@ -17,7 +17,7 @@ def test_login_page_loads_and_has_fields(selenium_driver, settings):
 @pytest.mark.selenium
 def test_can_fill_login_form_with_env_credentials(selenium_driver, settings):
     if not settings.sf_username or not settings.sf_password:
-        pytest.skip("Defina SF_USERNAME e SF_PASSWORD no .env para exercitar o preenchimento do login.")
+        pytest.skip("Defina SF_USERNAME e SF_PASSWORD no .env")
 
     selenium_driver.get(settings.sf_url)
     selenium_driver.find_element(By.ID, "username").send_keys(settings.sf_username)
