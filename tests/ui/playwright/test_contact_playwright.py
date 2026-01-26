@@ -1,7 +1,6 @@
 import allure
 import pytest
 from pathlib import Path
-from datetime import date
 from faker import Faker
 from playwright.sync_api import Page, expect, TimeoutError as PlaywrightTimeout
 
@@ -9,7 +8,6 @@ from tests.ui.playwright.utils import (
     attach_fields_snapshot,
     extractCreateContactFields,
     fillContactFieldByApi,
-    select_combobox_option,
 )
 
 fake = Faker("pt_BR")
@@ -39,9 +37,9 @@ def test_create_contact_full_form(page: Page, settings):
         "email": fake.email(),
         "assistant": fake.name(),
         "assistant_phone": fake.phone_number(),
-        "lead_source": None,  # será escolhido dinamicamente
+        "lead_source": None,
         "languages": "Português, Inglês",
-        "level": None,  # será escolhido dinamicamente
+        "level": None,
         "description": fake.text(max_nb_chars=120),
         "mailing_street": fake.street_address(),
         "mailing_city": fake.city(),
@@ -53,6 +51,8 @@ def test_create_contact_full_form(page: Page, settings):
         "other_state": "SP",
         "other_postal": fake.postcode(),
         "other_country": "Brasil",
+        "account_lookup": "Conta",
+        "reports_to_lookup": "José",
     }
 
     with allure.step("Given estou na home autenticado"):
@@ -81,7 +81,6 @@ def test_create_contact_full_form(page: Page, settings):
         attach_fields_snapshot(allure, fields)
 
     with allure.step("And preencho o formulário completo"):
-        # Saudação (tratamento) — combobox
         try:
             salutation = modal.get_by_role("button", name="Tratamento")
             salutation.click()
@@ -89,22 +88,21 @@ def test_create_contact_full_form(page: Page, settings):
         except PlaywrightTimeout:
             pass
 
-        fillContactFieldByApi(modal, "firstName", contact["firstName"])
-        fillContactFieldByApi(modal, "lastName", contact["lastName"])
-        fillContactFieldByApi(modal, "Phone", contact["phone"])
-        fillContactFieldByApi(modal, "HomePhone", contact["home"])
-        fillContactFieldByApi(modal, "MobilePhone", contact["mobile"])
-        fillContactFieldByApi(modal, "OtherPhone", contact["other_phone"])
-        fillContactFieldByApi(modal, "Title", contact["title"])
-        fillContactFieldByApi(modal, "Department", contact["department"])
-        fillContactFieldByApi(modal, "Fax", contact["fax"])
-        fillContactFieldByApi(modal, "Birthdate", contact["birthdate"])
-        fillContactFieldByApi(modal, "Email", contact["email"])
-        fillContactFieldByApi(modal, "AssistantName", contact["assistant"])
-        fillContactFieldByApi(modal, "AssistantPhone", contact["assistant_phone"])
-        fillContactFieldByApi(modal, "Languages__c", contact["languages"])
+        fillContactFieldByApi(modal, "firstName", contact["firstName"], timeout=2000)
+        fillContactFieldByApi(modal, "lastName", contact["lastName"], timeout=2000)
+        fillContactFieldByApi(modal, "Phone", contact["phone"], timeout=2000)
+        fillContactFieldByApi(modal, "HomePhone", contact["home"], timeout=2000)
+        fillContactFieldByApi(modal, "MobilePhone", contact["mobile"], timeout=2000)
+        fillContactFieldByApi(modal, "OtherPhone", contact["other_phone"], timeout=2000)
+        fillContactFieldByApi(modal, "Title", contact["title"], timeout=2000)
+        fillContactFieldByApi(modal, "Department", contact["department"], timeout=2000)
+        fillContactFieldByApi(modal, "Fax", contact["fax"], timeout=2000)
+        fillContactFieldByApi(modal, "Birthdate", contact["birthdate"], timeout=2000)
+        fillContactFieldByApi(modal, "Email", contact["email"], timeout=2000)
+        fillContactFieldByApi(modal, "AssistantName", contact["assistant"], timeout=2000)
+        fillContactFieldByApi(modal, "AssistantPhone", contact["assistant_phone"], timeout=2000)
+        fillContactFieldByApi(modal, "Languages__c", contact["languages"], timeout=2000)
 
-        # Level picklist (se existir) - escolhe a primeira opção válida diferente de "--Nenhum--"
         try:
             level_combo = modal.get_by_role("button", name="Level")
             level_combo.click()
@@ -116,30 +114,28 @@ def test_create_contact_full_form(page: Page, settings):
         except Exception:
             pass
 
-        # Endereço de correspondência
-        fillContactFieldByApi(modal, "street", contact["mailing_street"])
-        fillContactFieldByApi(modal, "city", contact["mailing_city"])
-        fillContactFieldByApi(modal, "province", contact["mailing_state"])
-        fillContactFieldByApi(modal, "postalCode", contact["mailing_postal"])
-        fillContactFieldByApi(modal, "country", contact["mailing_country"])
+        fillContactFieldByApi(modal, "street", contact["mailing_street"], timeout=2000)
+        fillContactFieldByApi(modal, "city", contact["mailing_city"], timeout=2000)
+        fillContactFieldByApi(modal, "province", contact["mailing_state"], timeout=2000)
+        fillContactFieldByApi(modal, "postalCode", contact["mailing_postal"], timeout=2000)
+        fillContactFieldByApi(modal, "country", contact["mailing_country"], timeout=2000)
 
-        # Outro endereço (quando aparecer, usa seletor mais específico por ordem)
         try:
-            fillContactFieldByApi(modal, "street", contact["other_street"], nth=1)
-            fillContactFieldByApi(modal, "city", contact["other_city"], nth=1)
-            fillContactFieldByApi(modal, "province", contact["other_state"], nth=1)
-            fillContactFieldByApi(modal, "postalCode", contact["other_postal"], nth=1)
-            fillContactFieldByApi(modal, "country", contact["other_country"], nth=1)
+            fillContactFieldByApi(modal, "street", contact["other_street"], nth=1, timeout=1500)
+            fillContactFieldByApi(modal, "city", contact["other_city"], nth=1, timeout=1500)
+            fillContactFieldByApi(modal, "province", contact["other_state"], nth=1, timeout=1500)
+            fillContactFieldByApi(modal, "postalCode", contact["other_postal"], nth=1, timeout=1500)
+            fillContactFieldByApi(modal, "country", contact["other_country"], nth=1, timeout=1500)
         except PlaywrightTimeout:
             pass
 
-        # Descrição
         modal.get_by_label("Descrição").fill(contact["description"])
 
+        allure.attach(page.screenshot(full_page=True), "form-preenchido", allure.attachment_type.PNG)
 
     with allure.step("And salvo o contato"):
         save_button = modal.locator("li[data-target-selection-name='sfdc:StandardButton.Contact.SaveEdit'] button[name='SaveEdit']").first
-        expect(save_button).to_be_enabled(timeout=10000)
+        expect(save_button).to_be_enabled(timeout=5000)
         save_button.click()
 
     with allure.step("Then devo ver a criação concluída"):

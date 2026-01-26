@@ -26,12 +26,12 @@ def extractCreateContactFields(page: Page) -> List[Dict[str, str]]:
     )
 
 
-def _fill_text(locator: Locator, value: str) -> None:
-    locator.wait_for(state="visible", timeout=10000)
-    locator.fill(value)
+def _fill_text(locator: Locator, value: str, timeout: int = 3000) -> None:
+    locator.wait_for(state="visible", timeout=timeout)
+    locator.fill(value, timeout=timeout)
 
 
-def fillContactFieldByApi(page: Page, api_name: str, value: str, nth: int = 0) -> None:
+def fillContactFieldByApi(page: Page, api_name: str, value: str, nth: int = 0, timeout: int = 3000) -> None:
     """
     Preenche um campo do modal de contato pelo API name.
     Prioriza inputs/textarea com atributo name e, em seguida,
@@ -40,18 +40,18 @@ def fillContactFieldByApi(page: Page, api_name: str, value: str, nth: int = 0) -
     # 1) Busca direta por atributo name.
     input_locator = page.locator(f"[name='{api_name}']")
     if input_locator.count() > nth:
-        _fill_text(input_locator.nth(nth), value)
+        _fill_text(input_locator.nth(nth), value, timeout=timeout)
         return
 
     # 2) Busca dentro de lightning-input-field correspondente.
     wrapper = page.locator(f"lightning-input-field[field-name='{api_name}']")
     if wrapper.count() == 0 or wrapper.count() <= nth:
-        raise ValueError(f"Campo {api_name} não encontrado no modal.")
+        raise ValueError(f"Campo {api_name} não encontrado no modal (nth={nth}).")
 
     target = wrapper.nth(nth).locator("input, textarea")
     if target.count() == 0:
         raise ValueError(f"Campo {api_name} não tem input/textarea visível.")
-    _fill_text(target.first, value)
+    _fill_text(target.first, value, timeout=timeout)
 
 
 def select_combobox_option(modal: Page, button_label: str, option_text: str) -> None:
