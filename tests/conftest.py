@@ -28,6 +28,7 @@ TRACE_DIR = ARTIFACT_ROOT / "traces"
 VIDEO_DIR = ARTIFACT_ROOT / "videos"
 REPORTS_DIR = Path("reports")
 API_LOG_DIR = REPORTS_DIR / "api-logs"
+AUTH_STATE_PATH = ARTIFACT_ROOT / "auth-state.json"
 
 SENSITIVE_HEADERS = {"authorization", "cookie", "set-cookie", "sf_token"}
 SENSITIVE_KEYS = {
@@ -265,7 +266,13 @@ def browser_context_args(browser_context_args):
 
 @pytest.fixture()
 def context(browser, browser_context_args, request):
-    context = browser.new_context(**browser_context_args)
+    context_args = dict(browser_context_args)
+
+    # Se já existe um estado autenticado salvo, reutiliza-o para manter a sessão.
+    if AUTH_STATE_PATH.exists():
+        context_args["storage_state"] = str(AUTH_STATE_PATH)
+
+    context = browser.new_context(**context_args)
     yield context
 
     recorded_videos = [page.video for page in context.pages if page.video]
