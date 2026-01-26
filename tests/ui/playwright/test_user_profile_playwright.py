@@ -8,7 +8,8 @@ from playwright.sync_api import Page, expect
 @pytest.mark.playwright
 def test_user_profile_shows_correct_user(page: Page, settings):
     """Cenário separado para validar o usuário logado via header/profile."""
-    auth_state = Path("test-results") / "auth-state.json"
+    from tests import conftest as conf
+    auth_state = conf.AUTH_STATE_PATH
     if not auth_state.exists():
         pytest.skip("auth-state.json não encontrado. Rode o teste de login primeiro para gerar o estado.")
 

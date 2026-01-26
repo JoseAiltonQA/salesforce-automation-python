@@ -113,11 +113,11 @@ def test_can_fill_login_form_with_env_credentials(page: Page, settings):
         )
 
     # Salva o estado autenticado para reutilizar a sessão em outros testes Playwright.
-    state_path = Path("test-results") / "auth-state.json"
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    page.context.storage_state(path=str(state_path))
+    from tests import conftest as conf
+
+    page.context.storage_state(path=str(conf.AUTH_STATE_PATH))
     allure.attach.file(
-        str(state_path),
+        str(conf.AUTH_STATE_PATH),
         name="auth-storage-state",
         attachment_type=allure.attachment_type.JSON,
     )

@@ -40,9 +40,9 @@ Guia rapido para rodar e consultar os relatórios (UI e API), com foco em inicia
 ### Login manual único e reutilização da sessão (Playwright)
 1) Rode o teste de login (abre o browser em modo headed):  
    `pytest tests/ui/playwright/test_login_playwright.py::test_can_fill_login_form_with_env_credentials -m playwright --headed`
-2) Faça o login manualmente (MFA/token). Ao navegar para o Home, o teste salva `test-results/auth-state.json` e anexa no Allure.
+2) Faça o login manualmente (MFA/token). Ao navegar para o Home, o teste salva `auth-state.json` (na raiz do projeto) e anexa no Allure.
 3) Demais testes UI usam esse `storageState` automaticamente (via `conftest.py`). Se o cookie expirar ou `auth-state.json` for removido, rode o teste de login novamente.
-4) O arquivo `test-results/auth-state.json` já está ignorado via pasta `test-results/` e não deve ser versionado.
+4) O arquivo `auth-state.json` não deve ser versionado (está listado no `.gitignore`).
 
 ### Como combinar API + UI
 - Use o fixture `api_client` (já configurado com `SF_API_BASE_URL` e `SF_TOKEN`) para criar/consultar dados antes e depois dos passos UI, validando status 200/204.

@@ -58,6 +58,7 @@ reports/
 **/test-results/
 **/allure-results/
 **/allure-report/
+auth-state.json
 
 # IDEs
 **/.idea/

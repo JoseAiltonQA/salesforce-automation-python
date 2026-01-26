@@ -19,21 +19,23 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
+#Garante que a raiz do projeto entra no PYTHONPATH. ssim o pytest consegue importar config.settings sem erro.
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from config.settings import get_settings  # noqa: E402
-
+#Pastas de artefatos e relatórios Define onde salvar:
 ARTIFACT_ROOT = Path("test-results")
 SCREENSHOT_DIR = ARTIFACT_ROOT / "screenshots"
 TRACE_DIR = ARTIFACT_ROOT / "traces"
 VIDEO_DIR = ARTIFACT_ROOT / "videos"
 REPORTS_DIR = Path("reports")
 API_LOG_DIR = REPORTS_DIR / "api-logs"
-AUTH_STATE_PATH = ARTIFACT_ROOT / "auth-state.json"
+AUTH_STATE_PATH = Path(__file__).resolve().parents[1] / "auth-state.json"
 HISTORY_DIR = ARTIFACT_ROOT / "history"
-
+# chaves e headers que nunca podem aparecer (token, cookie, senha etc.).
+# regex para esconder PII (e-mail, telefone, CPF). Isso evita vazar dados em logs, relatórios e CI.
 SENSITIVE_HEADERS = {"authorization", "cookie", "set-cookie", "sf_token"}
 SENSITIVE_KEYS = {
     "password",
@@ -50,6 +52,7 @@ SENSITIVE_KEYS = {
     "refresh",
     "client_secret",
 }
+# regex para esconder PII (e-mail, telefone, CPF). Isso evita vazar dados em logs, relatórios e CI.
 PII_PATTERNS = {
     "email": re.compile(r"[\w\.-]+@[\w\.-]+\.\w+", re.IGNORECASE),
     "phone": re.compile(r"\+?\d{0,3}\s*\(?\d{2}\)?[\s-]?\d{4,5}[\s-]?\d{4}"),
@@ -59,11 +62,11 @@ CORRELATION_HEADERS = ("x-correlation-id", "x-request-id", "traceparent", "x-amz
 MAX_PREVIEW_CHARS = 4000
 API_METRICS: List[Dict[str, Any]] = []
 
-
+#transforma texto em nome “seguro” para arquivo.
 def _slugify(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]+", "_", value)
 
-
+#tenta pegar branch/commit sem quebrar se git não existir.
 def _safe_git_cmd(args: List[str]) -> str:
     try:
         return (
@@ -73,14 +76,14 @@ def _safe_git_cmd(args: List[str]) -> str:
     except Exception:
         return ""
 
-
+#troca PII por [redacted].
 def _mask_text(value: str) -> str:
     masked = value
     for pattern in PII_PATTERNS.values():
         masked = pattern.sub("[redacted]", masked)
     return masked
 
-
+#limpa request/response antes de salvar.
 def _sanitize_body(data: Any) -> Any:
     if data is None:
         return None
@@ -99,7 +102,7 @@ def _sanitize_body(data: Any) -> Any:
         return [_sanitize_body(item) for item in data]
     return _mask_text(str(data))[:MAX_PREVIEW_CHARS]
 
-
+#limpa request/response antes de salvar.
 def _sanitize_headers(headers: httpx._types.HeaderTypes) -> Dict[str, str]:
     clean: Dict[str, str] = {}
     for key, value in headers.items():
@@ -110,14 +113,14 @@ def _sanitize_headers(headers: httpx._types.HeaderTypes) -> Dict[str, str]:
             clean[str(key)] = _mask_text(str(value))
     return clean
 
-
+#tenta capturar IDs úteis (x-request-id etc.) para rastrear erros.
 def _extract_correlation_id(headers: Dict[str, str]) -> str:
     for header in CORRELATION_HEADERS:
         if headers.get(header):
             return f"{header}: {headers[header]}"
     return ""
 
-
+#métrica de performance
 def _percentile(values: List[float], percentile: float) -> Optional[float]:
     if not values:
         return None
@@ -129,11 +132,11 @@ def _percentile(values: List[float], percentile: float) -> Optional[float]:
         return values_sorted[int(k)]
     return values_sorted[f] + (values_sorted[c] - values_sorted[f]) * (k - f)
 
-
+#interpreta env var tipo true/1/yes.
 def _is_truthy(value: str) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
-
+#guarda histórico do allure-results e remove os mais antigos (rotação).
 def _archive_allure_results(scenario: str, limit: int = 5) -> None:
     allure_dir = Path("allure-results")
     if not allure_dir.exists() or not any(allure_dir.iterdir()):
@@ -157,12 +160,12 @@ def _archive_allure_results(scenario: str, limit: int = 5) -> None:
     for old in scenario_runs[limit:]:
         shutil.rmtree(old, ignore_errors=True)
 
-
+#Carrega o .env uma vez por sessão e disponibiliza configs para todos os testes.
 @pytest.fixture(scope="session")
 def settings():
     return get_settings()
 
-
+# Antes de rodar os testes, cria as pastas de evidência/relatório. Evita erro de “pasta não existe”.
 @pytest.fixture(scope="session", autouse=True)
 def _prepare_artifact_dirs():
     for directory in (
@@ -175,7 +178,8 @@ def _prepare_artifact_dirs():
     ):
         directory.mkdir(parents=True, exist_ok=True)
 
-
+#Escreve allure-results/environment.properties
+#Coloca: SO, browser, headless, branch, commit. Ajuda a entender “onde e com qual versão” o teste rodou.
 @pytest.fixture(scope="session", autouse=True)
 def allure_environment(browser_name, settings):
     env_dir = Path("allure-results")
@@ -200,6 +204,13 @@ def allure_environment(browser_name, settings):
             file.write(f"{key}={value}\n")
 
 
+# Cria um httpx.Client com base_url e token.
+#   Usa event_hooks para capturar automaticamente:
+#   request: método, URL, headers/body sanitizados, start_time
+#   response: status, tempo, headers/body sanitizados, tamanho, correlation id
+# Salva:
+#   logs por teste em reports/api-logs/<teste>.json
+#   métricas globais em API_METRICS para gerar resumo no final
 @pytest.fixture()
 def api_client(settings, request):
     if not settings.sf_api_base_url or not settings.sf_token:
@@ -284,18 +295,19 @@ def api_client(settings, request):
         log_file.write_text(json.dumps(events, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+#seta headless de acordo com .env.
 @pytest.fixture(scope="session")
 def browser_type_launch_args(browser_type_launch_args, settings):
     launch_args = dict(browser_type_launch_args)
     launch_args.setdefault("headless", settings.headless)
     return launch_args
 
-
+#ativa gravação de vídeo em videos/.
 @pytest.fixture(scope="session")
 def browser_context_args(browser_context_args):
     return {**browser_context_args, "record_video_dir": str(VIDEO_DIR)}
 
-
+#cria contexto e reutiliza auth-state.json se existir (evita refazer login/MFA).
 @pytest.fixture()
 def context(browser, browser_context_args, request):
     context_args = dict(browser_context_args)
@@ -327,6 +339,7 @@ def context(browser, browser_context_args, request):
 @pytest.fixture()
 def page(context, request) -> Page:
     test_slug = _slugify(request.node.nodeid)
+    # No fim do teste, para o trace e salva traces/<teste>.zip. Anexa o zip no Allure (ótimo para debug no Trace Viewer).
     context.tracing.start(screenshots=True, snapshots=True, sources=False)
     page = context.new_page()
     yield page
@@ -386,6 +399,8 @@ def pytest_runtest_makereport(item, call):
 
 
 @pytest.hookimpl(trylast=True)
+# gera reports/api-metrics.json com total, sucesso, falhas, taxa, p95 por endpoint
+#gera reports/api-metrics.txt (resumido)
 def pytest_sessionfinish(session, exitstatus):
     if API_METRICS:
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -446,6 +461,7 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 @pytest.fixture()
+#Sobe Chrome (headless opcional) via webdriver-manager.
 def selenium_driver(settings):
     options = Options()
     if settings.headless:
