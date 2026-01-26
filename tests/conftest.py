@@ -1,9 +1,12 @@
 import json
+import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -29,6 +32,7 @@ VIDEO_DIR = ARTIFACT_ROOT / "videos"
 REPORTS_DIR = Path("reports")
 API_LOG_DIR = REPORTS_DIR / "api-logs"
 AUTH_STATE_PATH = ARTIFACT_ROOT / "auth-state.json"
+HISTORY_DIR = ARTIFACT_ROOT / "history"
 
 SENSITIVE_HEADERS = {"authorization", "cookie", "set-cookie", "sf_token"}
 SENSITIVE_KEYS = {
@@ -124,6 +128,34 @@ def _percentile(values: List[float], percentile: float) -> Optional[float]:
     if f == c:
         return values_sorted[int(k)]
     return values_sorted[f] + (values_sorted[c] - values_sorted[f]) * (k - f)
+
+
+def _is_truthy(value: str) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _archive_allure_results(scenario: str, limit: int = 5) -> None:
+    allure_dir = Path("allure-results")
+    if not allure_dir.exists() or not any(allure_dir.iterdir()):
+        return
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    dest = HISTORY_DIR / f"{scenario}-{timestamp}"
+    counter = 1
+    while dest.exists():
+        dest = HISTORY_DIR / f"{scenario}-{timestamp}-{counter}"
+        counter += 1
+
+    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(allure_dir, dest)
+
+    scenario_runs = sorted(
+        [p for p in HISTORY_DIR.iterdir() if p.is_dir() and p.name.startswith(f"{scenario}-")],
+        key=lambda p: p.name,
+        reverse=True,
+    )
+    for old in scenario_runs[limit:]:
+        shutil.rmtree(old, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")
@@ -268,7 +300,7 @@ def browser_context_args(browser_context_args):
 def context(browser, browser_context_args, request):
     context_args = dict(browser_context_args)
 
-    # Se já existe um estado autenticado salvo, reutiliza-o para manter a sessão.
+    # Reutiliza o estado autenticado salvo (gerado pelo teste de login) para manter a sessão.
     if AUTH_STATE_PATH.exists():
         context_args["storage_state"] = str(AUTH_STATE_PATH)
 
@@ -355,54 +387,62 @@ def pytest_runtest_makereport(item, call):
 
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
-    if not API_METRICS:
-        return
+    if API_METRICS:
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        metrics_file = REPORTS_DIR / "api-metrics.json"
 
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    metrics_file = REPORTS_DIR / "api-metrics.json"
+        total = len(API_METRICS)
+        success = sum(1 for m in API_METRICS if 200 <= m["status"] < 400)
+        fail = total - success
 
-    total = len(API_METRICS)
-    success = sum(1 for m in API_METRICS if 200 <= m["status"] < 400)
-    fail = total - success
+        by_endpoint: Dict[str, Dict[str, Any]] = {}
+        for metric in API_METRICS:
+            key = f"{metric['method']} {metric['endpoint']}"
+            by_endpoint.setdefault(key, {"times": [], "statuses": []})
+            by_endpoint[key]["times"].append(metric["elapsed_ms"])
+            by_endpoint[key]["statuses"].append(metric["status"])
 
-    by_endpoint: Dict[str, Dict[str, Any]] = {}
-    for metric in API_METRICS:
-        key = f"{metric['method']} {metric['endpoint']}"
-        by_endpoint.setdefault(key, {"times": [], "statuses": []})
-        by_endpoint[key]["times"].append(metric["elapsed_ms"])
-        by_endpoint[key]["statuses"].append(metric["status"])
+        endpoint_summaries = []
+        for endpoint, data in by_endpoint.items():
+            endpoint_summaries.append(
+                {
+                    "endpoint": endpoint,
+                    "count": len(data["times"]),
+                    "avg_ms": round(sum(data["times"]) / len(data["times"]), 2),
+                    "p95_ms": round(_percentile(data["times"], 0.95) or 0, 2),
+                    "min_ms": round(min(data["times"]), 2),
+                    "max_ms": round(max(data["times"]), 2),
+                }
+            )
 
-    endpoint_summaries = []
-    for endpoint, data in by_endpoint.items():
-        endpoint_summaries.append(
-            {
-                "endpoint": endpoint,
-                "count": len(data["times"]),
-                "avg_ms": round(sum(data["times"]) / len(data["times"]), 2),
-                "p95_ms": round(_percentile(data["times"], 0.95) or 0, 2),
-                "min_ms": round(min(data["times"]), 2),
-                "max_ms": round(max(data["times"]), 2),
-            }
-        )
+        summary = {
+            "total_requests": total,
+            "success": success,
+            "failed": fail,
+            "success_rate": round((success / total) * 100, 2) if total else 0,
+            "by_endpoint": endpoint_summaries,
+        }
 
-    summary = {
-        "total_requests": total,
-        "success": success,
-        "failed": fail,
-        "success_rate": round((success / total) * 100, 2) if total else 0,
-        "by_endpoint": endpoint_summaries,
-    }
+        metrics_file.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    metrics_file.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+        txt_summary_lines = [
+            f"Total: {total}",
+            f"Sucesso: {success}",
+            f"Falha: {fail}",
+            f"Taxa de sucesso: {summary['success_rate']}%",
+        ]
+        report_txt = REPORTS_DIR / "api-metrics.txt"
+        report_txt.write_text("\n".join(txt_summary_lines), encoding="utf-8")
 
-    txt_summary_lines = [
-        f"Total: {total}",
-        f"Sucesso: {success}",
-        f"Falha: {fail}",
-        f"Taxa de sucesso: {summary['success_rate']}%",
-    ]
-    report_txt = REPORTS_DIR / "api-metrics.txt"
-    report_txt.write_text("\n".join(txt_summary_lines), encoding="utf-8")
+    rotation_enabled = _is_truthy(os.environ.get("HISTORY_ROTATION_ENABLED", "true"))
+    if rotation_enabled:
+        scenario = os.environ.get("HISTORY_SCENARIO_NAME", "full-suite")
+        limit = os.environ.get("HISTORY_ROTATION_LIMIT", "5")
+        try:
+            limit_int = max(1, int(limit))
+        except Exception:
+            limit_int = 5
+        _archive_allure_results(scenario=scenario, limit=limit_int)
 
 
 @pytest.fixture()
@@ -414,3 +454,19 @@ def selenium_driver(settings):
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     yield driver
     driver.quit()
+
+
+def pytest_collection_modifyitems(items):
+    """
+    Garante que o teste de login Playwright rode primeiro para (re)gerar o auth-state.json
+    antes dos demais cenários UI que reutilizam a sessão.
+    """
+    if not items:
+        return
+
+    login_indices = [i for i, item in enumerate(items) if "test_login_playwright.py::test_can_fill_login_form_with_env_credentials" in item.nodeid]
+    if not login_indices:
+        return
+
+    first_login_index = login_indices[0]
+    items.insert(0, items.pop(first_login_index))

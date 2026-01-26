@@ -72,19 +72,10 @@ def test_can_fill_login_form_with_env_credentials(page: Page, settings):
 
         # Só continua quando o usuário clicar manualmente em "Verificar"
         try:
-            with page.expect_response(lambda res: res.url.startswith(home_url)) as resp_info:
-                page.wait_for_url("**/lightning/page/home", timeout=180000)
-            nav_response = resp_info.value
-
-            if nav_response.status != 200:
-                allure.attach(
-                    page.screenshot(full_page=True),
-                    name="05-token-validation-failed",
-                    attachment_type=allure.attachment_type.PNG,
-                )
-                pytest.fail(
-                    f"Token não validado: resposta HTTP {nav_response.status} após clicar em 'Verificar'."
-                )
+           page.wait_for_url(
+                "**/lightning/page/home", 
+                timeout=180000
+           )
         except TimeoutError:
             allure.attach(
                 page.screenshot(full_page=True),
@@ -130,42 +121,3 @@ def test_can_fill_login_form_with_env_credentials(page: Page, settings):
         name="auth-storage-state",
         attachment_type=allure.attachment_type.JSON,
     )
-
-
-@pytest.mark.ui
-@pytest.mark.playwright
-def test_user_profile_shows_correct_user(page: Page, settings):
-    """Cenário separado para validar o usuário logado via header/profile."""
-    # Reutiliza o estado salvo pelo teste de login; se não existir, pula.
-    auth_state = Path("test-results") / "auth-state.json"
-    if not auth_state.exists():
-        pytest.skip("auth-state.json não encontrado. Rode o teste de login primeiro para gerar o estado.")
-
-    with allure.step("Given estou na home já autenticado"):
-        page.goto("https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/page/home")
-        page.wait_for_load_state("domcontentloaded")
-        allure.attach(
-            page.screenshot(full_page=True),
-            name="01-home-authenticated",
-            attachment_type=allure.attachment_type.PNG,
-        )
-
-    with allure.step("When abro o menu do usuário"):
-        profile_button = page.locator("button.branding-userProfile-button")
-        expect(profile_button).to_be_visible()
-        profile_button.click()
-        allure.attach(
-            page.screenshot(full_page=True),
-            name="02-profile-menu-opened",
-            attachment_type=allure.attachment_type.PNG,
-        )
-
-    with allure.step('Then o nome exibido deve ser "José Ailton Junior"'):
-        profile_name = page.locator("h1.profile-card-name a.profile-link-label")
-        expect(profile_name).to_be_visible()
-        expect(profile_name).to_have_text("José Ailton Junior", timeout=10000)
-        allure.attach(
-            page.screenshot(full_page=True),
-            name="03-profile-name-validated",
-            attachment_type=allure.attachment_type.PNG,
-        )

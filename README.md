@@ -37,6 +37,18 @@ Guia rapido para rodar e consultar os relatórios (UI e API), com foco em inicia
 - Apenas Selenium: `pytest -m selenium`
 - Apenas API: `pytest -m api`
 
+### Login manual único e reutilização da sessão (Playwright)
+1) Rode o teste de login (abre o browser em modo headed):  
+   `pytest tests/ui/playwright/test_login_playwright.py::test_can_fill_login_form_with_env_credentials -m playwright --headed`
+2) Faça o login manualmente (MFA/token). Ao navegar para o Home, o teste salva `test-results/auth-state.json` e anexa no Allure.
+3) Demais testes UI usam esse `storageState` automaticamente (via `conftest.py`). Se o cookie expirar ou `auth-state.json` for removido, rode o teste de login novamente.
+4) O arquivo `test-results/auth-state.json` já está ignorado via pasta `test-results/` e não deve ser versionado.
+
+### Como combinar API + UI
+- Use o fixture `api_client` (já configurado com `SF_API_BASE_URL` e `SF_TOKEN`) para criar/consultar dados antes e depois dos passos UI, validando status 200/204.
+- Deixe a UI apenas para o que precisa de interação visual; dados e validações rápidas ficam na camada de API.
+- Lembre-se: se o fluxo UI redirecionar para login, o cookie pode ter expirado. Rode o teste de login para regenerar o `storageState` e repita os cenários UI.
+
 ## Como gerar e ver relatorios
 - Resultados brutos (apos qualquer pytest): `allure-results/`
 - Gerar HTML: `allure generate --clean allure-results -o allure-report`
@@ -49,6 +61,15 @@ Guia rapido para rodar e consultar os relatórios (UI e API), com foco em inicia
   - Sumario de saude de API: `reports/api-metrics.{json,txt}`
   - Playwright traces/videos/screenshots: `test-results/` (gerados em toda execucao para UI; videos desde a abertura do navegador ate o fim)
 - No Allure, cada teste UI mostra steps (`allure.step`) e anexos (screenshots em cada passo, video completo, trace) mesmo em sucesso.
+
+### Histórico Allure (últimas execuções)
+- A cada `pytest`, o conteúdo de `allure-results/` é copiado para `test-results/history/<cenario>-<YYYYMMDD>-<HHmmss>/`.
+- Por padrão, mantém as 5 execuções mais recentes por cenário (rotaciona e apaga as mais antigas).
+- Variáveis (opcionais):
+  - `HISTORY_ROTATION_ENABLED=true|false` (padrão: true)
+  - `HISTORY_ROTATION_LIMIT=5` (mínimo 1)
+  - `HISTORY_SCENARIO_NAME=full-suite` (use para nomear o cenário quando rodar subconjuntos)
+- Para abrir um histórico específico: `allure serve test-results/history/<pasta-do-cenario>/`
 
 ## Estrutura de pastas
 - `config/settings.py` e `config/__init__.py`: carregam .env.
