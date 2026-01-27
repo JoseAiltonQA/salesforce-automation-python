@@ -7,7 +7,7 @@ from tests.utils.logger import step
 
 @pytest.mark.ui
 @pytest.mark.playwright
-def test_can_fill_login_form_with_env_credentials(page: Page, settings):
+def test_can_fill_login_form_with_env_credentials(page: Page, settings, request):
     if not settings.sf_username or not settings.sf_password:
         pytest.skip("Defina SF_USERNAME e SF_PASSWORD no .env")
 
