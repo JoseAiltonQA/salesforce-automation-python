@@ -19,6 +19,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
+from tests.utils.logger import create_logger_for_test, setup_page_listeners
+
 #Garante que a raiz do projeto entra no PYTHONPATH. ssim o pytest consegue importar config.settings sem erro.
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -342,6 +344,10 @@ def page(context, request) -> Page:
     # No fim do teste, para o trace e salva traces/<teste>.zip. Anexa o zip no Allure (ótimo para debug no Trace Viewer).
     context.tracing.start(screenshots=True, snapshots=True, sources=False)
     page = context.new_page()
+    logger = create_logger_for_test(test_slug)
+    request.node._logger = logger
+    logger.step("Página criada", {"url": page.url})
+    setup_page_listeners(page, logger)
     yield page
 
     trace_path = TRACE_DIR / f"{test_slug}.zip"
@@ -381,21 +387,38 @@ def pytest_runtest_makereport(item, call):
     rep = outcome.get_result()
     setattr(item, f"rep_{rep.when}", rep)
 
-    if rep.when != "call":
-        return
+    if rep.when == "call":
+        events = getattr(item, "api_events", None)
+        if events:
+            allure.attach(
+                json.dumps(events, ensure_ascii=False, indent=2),
+                name="api-request-response",
+                attachment_type=allure.attachment_type.JSON,
+            )
+            allure.attach(
+                _summarize_api_events(events),
+                name="api-summary",
+                attachment_type=allure.attachment_type.TEXT,
+            )
 
-    events = getattr(item, "api_events", None)
-    if events:
-        allure.attach(
-            json.dumps(events, ensure_ascii=False, indent=2),
-            name="api-request-response",
-            attachment_type=allure.attachment_type.JSON,
-        )
-        allure.attach(
-            _summarize_api_events(events),
-            name="api-summary",
-            attachment_type=allure.attachment_type.TEXT,
-        )
+    # Teardown de logs e anexos
+    logger = getattr(item, "_logger", None)
+    if logger and rep.when == "teardown":
+        # anexa log global (fora de steps)
+        logger.attach_once()
+
+        # Em falha, captura screenshot e HTML se houver page
+        if getattr(item, "rep_call", None) and item.rep_call.failed:
+            page = item.funcargs.get("page") if hasattr(item, "funcargs") else None
+            if page:
+                try:
+                    allure.attach(page.screenshot(full_page=True), name="failure-screenshot", attachment_type=allure.attachment_type.PNG)
+                except Exception:
+                    pass
+                try:
+                    allure.attach(page.content(), name="page-source", attachment_type=allure.attachment_type.HTML)
+                except Exception:
+                    pass
 
 
 @pytest.hookimpl(trylast=True)

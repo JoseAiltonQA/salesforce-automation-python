@@ -2,6 +2,7 @@ import allure
 import pytest
 from pathlib import Path
 from playwright.sync_api import Page, TimeoutError, expect
+from tests.utils.logger import step
 
 
 @pytest.mark.ui
@@ -10,7 +11,9 @@ def test_can_fill_login_form_with_env_credentials(page: Page, settings):
     if not settings.sf_username or not settings.sf_password:
         pytest.skip("Defina SF_USERNAME e SF_PASSWORD no .env")
 
-    with allure.step("Given estou na pagina de login"):
+    logger = request.node._logger
+
+    with step(logger, "Given estou na pagina de login"):
         page.set_default_timeout(10000)
         page.goto(settings.sf_url)
 
@@ -24,7 +27,7 @@ def test_can_fill_login_form_with_env_credentials(page: Page, settings):
             attachment_type=allure.attachment_type.PNG,
         )
 
-    with allure.step("When preencho usuario e senha"):
+    with step(logger, "When preencho usuario e senha"):
         password = page.locator("input#password")
 
         #  garante que os campos estão prontos para digitar
@@ -43,7 +46,7 @@ def test_can_fill_login_form_with_env_credentials(page: Page, settings):
             attachment_type=allure.attachment_type.PNG,
         )
 
-    with allure.step("And clico em Login"):
+    with step(logger, "And clico em Login"):
         login_button = page.locator("input#Login")
 
         #  só clica quando o botão estiver habilitado
@@ -60,7 +63,7 @@ def test_can_fill_login_form_with_env_credentials(page: Page, settings):
             attachment_type=allure.attachment_type.PNG,
         )
 
-    with allure.step("Then aguardo a validação do token"):
+    with step(logger, "Then aguardo a validação do token"):
         # Neste ponto a tela de token já apareceu (porque esperamos por input#save acima)
         allure.attach(
             page.screenshot(full_page=True),
@@ -87,13 +90,16 @@ def test_can_fill_login_form_with_env_credentials(page: Page, settings):
                 "após clicar manualmente em 'Verificar'."
             )
         else:
-            allure.attach(
-                page.screenshot(full_page=True),
-                name="05-token-validated",
-                attachment_type=allure.attachment_type.PNG,
-            )
+            try:
+                allure.attach(
+                    page.screenshot(full_page=True),
+                    name="05-token-validated",
+                    attachment_type=allure.attachment_type.PNG,
+                )
+            except Exception:
+                pass
 
-    with allure.step("Then a page do home"):
+    with step(logger, "Then a page do home"):
         #  garante que a navegação terminou e a página carregou o DOM
         page.wait_for_load_state("domcontentloaded")
 

@@ -114,13 +114,109 @@ O Assistente deve:
 - Nunca compartilhar output com token; se necessário, exibir parcialmente mascarado.
 
 ### 3.2 Logs, evidências e relatórios
-- Logs devem evitar dados pessoais e segredos:
-  - mascarar e-mails/telefones/IDs,
-  - truncar payloads.
+- Logs: seguir a seção **3.2.1 Política de Logging (LGPD + Rastreabilidade + Allure)**.
 - Screenshots:
-  - só capturar em falha,
+  - capturar ao fim de todos os passo (indepenente falha, sucesso, outros...),
   - preferir mascaramento,
   - armazenar fora do repo público.
+- Artefatos (Allure/logs):
+  - `logs/`, `allure-results/`, `allure-report/` no `.gitignore`.
+  
+### 3.2.1 Política de Logging (LGPD + Rastreabilidade + Allure)
+
+  #### Objetivo
+  Garantir logs **úteis, consistentes e auditáveis** em todas as execuções (local/CI), com **proteção de dados (LGPD)**, **rastreabilidade ponta-a-ponta** (run_id/correlation_id) e **evidência automática no relatório Allure** (anexo no teardown).
+
+  ---
+
+  ## Princípios (obrigatórios)
+  1. **Single Source of Truth**
+    - A configuração de logging deve existir em **um único módulo** (ex.: `utils/logging_config.py`).
+    - É proibido configurar logging em múltiplos pontos do código.
+  2. **Sem `print()`**
+    - `print()` é proibido em testes e libs (exceto debug local temporário, removido antes do merge).
+  3. **Sem duplicidade**
+    - Nunca adicionar handlers duplicados. Antes de adicionar handlers, checar se já existem.
+  4. **Logs estruturados e rastreáveis**
+    - Todo log deve conter ao menos: `timestamp`, `level`, `module`, `run_id`, `scenario`/`test_id`, `step` (quando aplicável).
+  5. **LGPD / Segredos**
+    - Nunca logar: **senha**, **token**, **Authorization**, **cookie**, **API keys**, **CPF**, **e-mail completo**, **telefone completo**, **dados sensíveis**.
+    - Aplicar mascaramento automático (redaction) para padrões comuns (tokens, emails, CPFs, telefones).
+  6. **Allure como fonte de evidência**
+    - O log do teste (ou da execução) deve ser anexado ao Allure **no teardown** (hook de finalização).
+    - Regra padrão: anexar **sempre** (ou, se necessário por volume, anexar **apenas em falha**, documentando a decisão).
+
+  ---
+
+  ## Padrão de níveis (uso recomendado)
+  - `DEBUG`: detalhes técnicos (waits, retries, payloads mascarados, seletores, timing)
+  - `INFO`: passos funcionais (“abriu tela”, “clicou”, “validou”)
+  - `WARNING`: condição inesperada recuperável
+  - `ERROR`: falha de ação/validação (que leva o teste a falhar)
+  - `CRITICAL`: falha sistêmica (ambiente indisponível, dependência crítica, crash)
+
+  > O nível deve ser controlável via variável de ambiente: `LOG_LEVEL=INFO|DEBUG|WARNING|ERROR`.
+
+  ---
+
+  ## Formato padrão (mínimo)
+  - Formato recomendado (texto ou JSON):
+    - `%(asctime)s | %(levelname)s | run=%(run_id)s | test=%(test_id)s | step=%(step)s | %(name)s | %(message)s`
+  - Campos mínimos obrigatórios:
+    - `run_id`: ID único da execução (ex.: timestamp + hash curto)
+    - `test_id`: ID do cenário/teste (nome sanitizado + id)
+    - `step`: etapa atual (quando houver; caso contrário `"n/a"`)
+
+  ---
+
+  ## Arquivos e organização (recomendado)
+  - Gerar logs em `./logs/`
+  - **1 arquivo por execução** (obrigatório):
+    - `logs/run_<run_id>.log`
+  - **Opcional (recomendado): 1 arquivo por cenário**
+    - `logs/test_<test_id>_<run_id>.log`
+  - Rotação e retenção (para evitar log infinito em CI):
+    - Rotacionar por tamanho e manter backups limitados (ex.: 5 arquivos).
+  - Git:
+    - `logs/`, `allure-results/`, `allure-report/` devem estar no `.gitignore` (exceto exemplos vazios/README).
+
+  ---
+
+  ## LGPD: regras de mascaramento (obrigatório)
+  - Qualquer dado que pareça:
+    - token/chave (ex.: `Bearer ...`, `sk-...`, JWT),
+    - e-mail (`xxx@yyy`),
+    - CPF,
+    - telefone,
+    - headers `Authorization`, `Cookie`,
+    deve ser mascarado automaticamente.
+  - Exemplos aceitáveis:
+    - e-mail: `j***@g***.com`
+    - telefone: `*******3894`
+    - token: `***REDACTED***`
+
+  ---
+
+  ## Integração com Allure (obrigatório)
+  - No teardown (ou hook equivalente):
+    1. Garantir `flush()` e `close()` do handler de arquivo.
+    2. Anexar o arquivo de log ao Allure:
+      - Nome do attachment: `execution-log` ou `test-log`
+      - Tipo: `text/plain` (ou `application/json` se estruturado)
+  - Política de anexos:
+    - **Padrão**: anexar sempre
+    - **Alternativa** (se volume for problema): anexar apenas em falha, documentando no pipeline.
+
+  ---
+
+  ## Checklist (antes de merge)
+  - [ ] Existe **um único** módulo de configuração de logging.
+  - [ ] Não há `print()` no código versionado.
+  - [ ] Não existem handlers duplicados (sem logs repetidos).
+  - [ ] `run_id` e `test_id` aparecem em todos os logs relevantes.
+  - [ ] Existe mascaramento automático (redaction) para segredos e PII.
+  - [ ] O log é anexado ao Allure no teardown (sempre ou apenas em falha, conforme regra).
+  - [ ] Diretórios de logs e allure estão no `.gitignore`.
 
 ### 3.3 Dependências
 - Antes de adicionar biblioteca:

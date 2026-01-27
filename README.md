@@ -44,6 +44,12 @@ Guia rapido para rodar e consultar os relatórios (UI e API), com foco em inicia
 3) Demais testes UI usam esse `storageState` automaticamente (via `conftest.py`). Se o cookie expirar ou `auth-state.json` for removido, rode o teste de login novamente.
 4) O arquivo `auth-state.json` não deve ser versionado (está listado no `.gitignore`).
 
+### Logging estruturado (pytest + Playwright + Allure)
+- Cada teste Playwright ganha um logger único (stdout + Allure).  
+- Níveis: `LOG_LEVEL=debug|info|warn|error` (padrão: info).  
+- Em sucesso: anexo único `execution.log` no Allure. Em falha: log + screenshot + HTML.  
+- Exemplo rápido: `pytest tests/ui/playwright/test_logging_demo.py -m playwright --headed`
+
 ### Como combinar API + UI
 - Use o fixture `api_client` (já configurado com `SF_API_BASE_URL` e `SF_TOKEN`) para criar/consultar dados antes e depois dos passos UI, validando status 200/204.
 - Deixe a UI apenas para o que precisa de interação visual; dados e validações rápidas ficam na camada de API.
