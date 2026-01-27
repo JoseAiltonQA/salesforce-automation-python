@@ -1,33 +1,129 @@
+import allure
 import pytest
-from playwright.sync_api import Page
+from pathlib import Path
+from playwright.sync_api import Page, TimeoutError, expect
+from tests.utils.logger import step
 
 
 @pytest.mark.ui
 @pytest.mark.playwright
-def test_login_page_shows_fields(page: Page, settings):
-    page.set_default_timeout(10000)
-    page.goto(settings.sf_url)
-
-    username = page.wait_for_selector("input#username")
-    password = page.wait_for_selector("input#password")
-    login_button = page.wait_for_selector("input#Login")
-
-    assert username.is_visible()
-    assert password.is_visible()
-    assert login_button.is_enabled()
-
-
-@pytest.mark.ui
-@pytest.mark.playwright
-def test_can_fill_login_form_with_env_credentials(page: Page, settings):
+def test_can_fill_login_form_with_env_credentials(page: Page, settings, request):
     if not settings.sf_username or not settings.sf_password:
-        pytest.skip("Defina SF_USERNAME e SF_PASSWORD no .env para exercitar o preenchimento do login.")
+        pytest.skip("Defina SF_USERNAME e SF_PASSWORD no .env")
 
-    page.set_default_timeout(10000)
-    page.goto(settings.sf_url)
-    page.fill("input#username", settings.sf_username)
-    page.fill("input#password", settings.sf_password)
-    page.click("input#Login")
-    page.wait_for_timeout(3000)
+    logger = request.node._logger
 
-    assert page.url.startswith("https://")
+    with step(logger, "Given estou na pagina de login"):
+        page.set_default_timeout(10000)
+        page.goto(settings.sf_url)
+
+        #  só continua quando o campo de usuário existir e estiver visível
+        username = page.locator("input#username")
+        expect(username).to_be_visible()
+
+        allure.attach(
+            page.screenshot(full_page=True),
+            name="01-login-page",
+            attachment_type=allure.attachment_type.PNG,
+        )
+
+    with step(logger, "When preencho usuario e senha"):
+        password = page.locator("input#password")
+
+        #  garante que os campos estão prontos para digitar
+        expect(password).to_be_visible()
+
+        username.fill(settings.sf_username)
+        password.fill(settings.sf_password)
+
+        #  valida que os campos realmente ficaram preenchidos
+        expect(username).to_have_value(settings.sf_username)
+        expect(password).to_have_value(settings.sf_password)
+
+        allure.attach(
+            page.screenshot(full_page=True),
+            name="02-form-filled",
+            attachment_type=allure.attachment_type.PNG,
+        )
+
+    with step(logger, "And clico em Login"):
+        login_button = page.locator("input#Login")
+
+        #  só clica quando o botão estiver habilitado
+        expect(login_button).to_be_enabled()
+        login_button.click()
+
+        #  depois do click, esperamos algum “sinal” de próxima etapa.
+        # Aqui, o sinal é: aparecer o elemento da página de token (input#save)
+        page.wait_for_selector("input#save", timeout=120000)
+
+        allure.attach(
+            page.screenshot(full_page=True),
+            name="03-after-click-login",
+            attachment_type=allure.attachment_type.PNG,
+        )
+
+    with step(logger, "Then aguardo a validação do token"):
+        # Neste ponto a tela de token já apareceu (porque esperamos por input#save acima)
+        allure.attach(
+            page.screenshot(full_page=True),
+            name="04-token-page",
+            attachment_type=allure.attachment_type.PNG,
+        )
+
+        home_url = "https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/page/home"
+
+        # Só continua quando o usuário clicar manualmente em "Verificar"
+        try:
+           page.wait_for_url(
+                "**/lightning/page/home", 
+                timeout=180000
+           )
+        except TimeoutError:
+            allure.attach(
+                page.screenshot(full_page=True),
+                name="05-token-validation-failed",
+                attachment_type=allure.attachment_type.PNG,
+            )
+            pytest.fail(
+                "Token não validado: a página não navegou para o Lightning Home em até 180s "
+                "após clicar manualmente em 'Verificar'."
+            )
+        else:
+            try:
+                allure.attach(
+                    page.screenshot(full_page=True),
+                    name="05-token-validated",
+                    attachment_type=allure.attachment_type.PNG,
+                )
+            except Exception:
+                pass
+
+    with step(logger, "Then a page do home"):
+        #  garante que a navegação terminou e a página carregou o DOM
+        page.wait_for_load_state("domcontentloaded")
+
+        #  em vez de assert imediato, o expect espera o título ficar certo
+        expect(page).to_have_title("Início | Salesforce")
+
+        title = page.title()
+        allure.attach(
+            title,
+            name="page-title",
+            attachment_type=allure.attachment_type.TEXT,
+        )
+        allure.attach(
+            page.screenshot(full_page=True),
+            name="06-home",
+            attachment_type=allure.attachment_type.PNG,
+        )
+
+    # Salva o estado autenticado para reutilizar a sessão em outros testes Playwright.
+    from tests import conftest as conf
+
+    page.context.storage_state(path=str(conf.AUTH_STATE_PATH))
+    allure.attach.file(
+        str(conf.AUTH_STATE_PATH),
+        name="auth-storage-state",
+        attachment_type=allure.attachment_type.JSON,
+    )
