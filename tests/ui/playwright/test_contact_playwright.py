@@ -207,6 +207,7 @@ def test_edit_contact_updates_name(page: Page, settings):
         page.goto("https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/o/Contact/list?filterName=Recent")
         page.wait_for_load_state("domcontentloaded")
         expect(page).to_have_url(re.compile("Contact/list"), timeout=20000)
+        page.wait_for_timeout(500)
         allure.attach(page.screenshot(full_page=True), "lista-contatos", allure.attachment_type.PNG)
 
     with allure.step("When abro o contato salvo pela lista"):
@@ -266,6 +267,7 @@ def test_edit_contact_updates_name(page: Page, settings):
         open_link.click()
         page.wait_for_url("**/lightning/r/Contact/**", timeout=20000)
         page.wait_for_load_state("domcontentloaded")
+        page.wait_for_timeout(500)
         allure.attach(page.screenshot(full_page=True), "detalhe-contato", allure.attachment_type.PNG)
 
     with allure.step("And clico em Editar e altero o nome"):
@@ -310,6 +312,8 @@ def test_edit_contact_updates_name(page: Page, settings):
 
         modal = page.locator("records-modal-lwc-detail-panel-wrapper").first
         expect(modal).to_be_visible(timeout=10000)
+        page.wait_for_timeout(300)
+        allure.attach(page.screenshot(full_page=True), "modal-edicao", allure.attachment_type.PNG)
 
         last_input_candidates = [
             modal.locator("lightning-input[data-field='lastName'] input").first,
@@ -347,6 +351,8 @@ def test_edit_contact_updates_name(page: Page, settings):
             last_input.press("Tab")
         except Exception:
             pass
+        page.wait_for_timeout(300)
+        allure.attach(page.screenshot(full_page=True), "sobrenome-editado", allure.attachment_type.PNG)
 
         save_button = None
         for candidate in [
@@ -361,6 +367,7 @@ def test_edit_contact_updates_name(page: Page, settings):
 
         expect(save_button).to_be_enabled(timeout=5000)
         save_button.click()
+        page.wait_for_timeout(500)
 
     with allure.step("Then o nome atualizado deve aparecer"):
         toast = page.locator("span.toastMessage")
@@ -369,6 +376,7 @@ def test_edit_contact_updates_name(page: Page, settings):
             expect(toast).to_contain_text(new_full, timeout=5000)
         except Exception:
             pass  # alguns toasts mostram apenas o nome antigo; seguimos validando no header
+        allure.attach(page.screenshot(full_page=True), "toast-e-header", allure.attachment_type.PNG)
 
         header_name = page.locator("lightning-formatted-name").first
         expect(header_name).to_have_text(new_full, timeout=15000)
