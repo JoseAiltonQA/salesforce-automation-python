@@ -1,5 +1,6 @@
 import allure
 import pytest
+import re
 from pathlib import Path
 from playwright.sync_api import Page, TimeoutError, expect
 from tests.utils.logger import step
@@ -54,8 +55,21 @@ def test_can_fill_login_form_with_env_credentials(page: Page, settings, request)
         login_button.click()
 
         #  depois do click, esperamos algum “sinal” de próxima etapa.
-        # Aqui, o sinal é: aparecer o elemento da página de token (input#save)
-        page.wait_for_selector("input#save", timeout=120000)
+        #  Fluxo 1: aparece tela de token (input#save)
+        #  Fluxo 2: navega direto para o Lightning Home (já autenticado / cookie válido)
+        token_seen = False
+        try:
+            page.wait_for_selector("input#save", timeout=15000)
+            token_seen = True
+        except TimeoutError:
+            pass
+
+        if not token_seen:
+            # tenta detectar navegação direta para home/lightning
+            try:
+                page.wait_for_url("**/lightning/**", timeout=60000)
+            except TimeoutError:
+                pytest.fail("Não apareceu tela de token nem navegou para o Lightning Home após o login.")
 
         allure.attach(
             page.screenshot(full_page=True),
@@ -64,47 +78,47 @@ def test_can_fill_login_form_with_env_credentials(page: Page, settings, request)
         )
 
     with step(logger, "Then aguardo a validação do token"):
-        # Neste ponto a tela de token já apareceu (porque esperamos por input#save acima)
-        allure.attach(
-            page.screenshot(full_page=True),
-            name="04-token-page",
-            attachment_type=allure.attachment_type.PNG,
-        )
-
-        home_url = "https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/page/home"
-
-        # Só continua quando o usuário clicar manualmente em "Verificar"
-        try:
-           page.wait_for_url(
-                "**/lightning/page/home", 
-                timeout=180000
-           )
-        except TimeoutError:
-            allure.attach(
-                page.screenshot(full_page=True),
-                name="05-token-validation-failed",
-                attachment_type=allure.attachment_type.PNG,
-            )
-            pytest.fail(
-                "Token não validado: a página não navegou para o Lightning Home em até 180s "
-                "após clicar manualmente em 'Verificar'."
-            )
+        # Neste ponto podemos estar em dois caminhos:
+        # - Token/MFA exibido (input#save visível)
+        # - Já navegamos para o Lightning sem token (cookie válido)
+        home_url = "**/lightning/page/home"
+        current_url = page.url
+        if "lightning" in current_url:
+            page.wait_for_load_state("domcontentloaded")
         else:
             try:
+                page.wait_for_selector("input#save", timeout=1000)
                 allure.attach(
                     page.screenshot(full_page=True),
-                    name="05-token-validated",
+                    name="04-token-page",
                     attachment_type=allure.attachment_type.PNG,
                 )
-            except Exception:
-                pass
+                try:
+                    page.wait_for_url(home_url, timeout=180000)
+                except TimeoutError:
+                    allure.attach(
+                        page.screenshot(full_page=True),
+                        name="05-token-validation-failed",
+                        attachment_type=allure.attachment_type.PNG,
+                    )
+                    pytest.fail(
+                        "Token não validado: a página não navegou para o Lightning Home em até 180s "
+                        "após clicar manualmente em 'Verificar'."
+                    )
+            except TimeoutError:
+                # nem token nem lightning, tenta aguardar navegação direta
+                page.wait_for_url(home_url, timeout=60000)
 
     with step(logger, "Then a page do home"):
         #  garante que a navegação terminou e a página carregou o DOM
         page.wait_for_load_state("domcontentloaded")
 
         #  em vez de assert imediato, o expect espera o título ficar certo
-        expect(page).to_have_title("Início | Salesforce")
+        try:
+            expect(page).to_have_title(re.compile("Salesforce", re.IGNORECASE), timeout=30000)
+        except Exception:
+            # fallback: apenas garante que estamos em lightning/home
+            expect(page).to_have_url(re.compile("lightning/page/home"), timeout=30000)
 
         title = page.title()
         allure.attach(

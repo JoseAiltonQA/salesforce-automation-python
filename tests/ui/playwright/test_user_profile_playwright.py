@@ -15,6 +15,7 @@ def test_user_profile_shows_correct_user(page: Page, settings):
 
     with allure.step("Given estou na home já autenticado"):
         page.goto("https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/page/home")
+        page.wait_for_url("**/lightning/**", timeout=60000)
         page.wait_for_load_state("domcontentloaded")
         allure.attach(
             page.screenshot(full_page=True),
@@ -23,8 +24,10 @@ def test_user_profile_shows_correct_user(page: Page, settings):
         )
 
     with allure.step("When abro o menu do usuário"):
-        profile_button = page.locator("button.branding-userProfile-button")
-        expect(profile_button).to_be_visible()
+        profile_button = page.locator(
+            "button.branding-userProfile-button, button[title='Exibir painel do usuário'], button[title='User menu']"
+        ).first
+        expect(profile_button).to_be_visible(timeout=15000)
         profile_button.click()
         allure.attach(
             page.screenshot(full_page=True),
