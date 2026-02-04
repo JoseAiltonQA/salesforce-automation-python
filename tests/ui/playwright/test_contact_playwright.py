@@ -207,12 +207,12 @@ def test_edit_contact_updates_name(page: Page, settings):
         page.goto("https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/o/Contact/list?filterName=Recent")
         page.wait_for_load_state("domcontentloaded")
         expect(page).to_have_url(re.compile("Contact/list"), timeout=20000)
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(7000)
         allure.attach(page.screenshot(full_page=True), "lista-contatos", allure.attachment_type.PNG)
 
     with allure.step("When abro o contato salvo pela lista"):
         row = page.locator("tbody tr").filter(has_text=old_full).first
-
+        
         def _try_search():
             # Campo de busca pode estar traduzido; tentamos variações comuns.
             search_box = None
@@ -220,7 +220,6 @@ def test_edit_contact_updates_name(page: Page, settings):
                 page.get_by_placeholder("Pesquisar esta lista...", exact=False),
                 page.get_by_placeholder("Search this list...", exact=False),
                 page.locator("input[type='search']").first,
-                page.wait_for_timeout(7000)
             ]:
                 if candidate.count() > 0:
                     search_box = candidate
@@ -271,6 +270,7 @@ def test_edit_contact_updates_name(page: Page, settings):
         allure.attach(page.screenshot(full_page=True), "detalhe-contato", allure.attachment_type.PNG)
 
     with allure.step("And clico em Editar e altero o nome"):
+        page.wait_for_timeout(5000)
         edit_button = None
         for candidate in [
             page.locator("[data-target-selection-name='standard__recordPage-RecordEdit']").first,
@@ -290,12 +290,20 @@ def test_edit_contact_updates_name(page: Page, settings):
             actions_dropdown = None
             for cand in [
                 page.locator("records-lwc-highlights-panel lightning-button-menu button").first,
+                page.locator("one-record-home-flexipage2 lightning-button-menu button").first,
                 page.locator("button[title='Mostrar mais ações'], button[aria-label='Mostrar mais ações']").first,
                 page.locator("lightning-button-menu button").first,
             ]:
                 if cand.count() > 0:
-                    actions_dropdown = cand
-                    break
+                    try:
+                        cand.wait_for(state="visible", timeout=3000)
+                        # evita pegar controles de exibição de lista
+                        if "exibição de lista" in (cand.get_attribute("title") or "").lower():
+                            continue
+                        actions_dropdown = cand
+                        break
+                    except Exception:
+                        continue
 
             if not actions_dropdown or actions_dropdown.count() == 0:
                 pytest.skip("Botão Editar não encontrado na página do contato.")
@@ -306,13 +314,14 @@ def test_edit_contact_updates_name(page: Page, settings):
             menu_edit = page.get_by_role("menuitem", name=re.compile("Editar contato|Editar|Edit", re.IGNORECASE))
             expect(menu_edit).to_be_visible(timeout=5000)
             menu_edit.click()
+            page.wait_for_timeout(400)
 
     with allure.step("And altero o nome e salvo"):
         page.wait_for_url("**/edit**", timeout=20000)
 
         modal = page.locator("records-modal-lwc-detail-panel-wrapper").first
         expect(modal).to_be_visible(timeout=10000)
-        page.wait_for_timeout(300)
+        page.wait_for_timeout(900)
         allure.attach(page.screenshot(full_page=True), "modal-edicao", allure.attachment_type.PNG)
 
         last_input_candidates = [
@@ -356,8 +365,9 @@ def test_edit_contact_updates_name(page: Page, settings):
 
         save_button = None
         for candidate in [
-            page.get_by_role("button", name=re.compile("Salvar|Save", re.IGNORECASE)).first,
-            page.locator("button[name='SaveEdit']").first,
+            page.locator("button[name='SaveEdit']").first,  # botão Salvar padrão
+            page.get_by_role("button", name=re.compile("^Salvar$", re.IGNORECASE)).first,
+            page.get_by_role("button", name=re.compile("^Save$", re.IGNORECASE)).first,
         ]:
             if candidate.count() > 0:
                 save_button = candidate
@@ -367,6 +377,11 @@ def test_edit_contact_updates_name(page: Page, settings):
 
         expect(save_button).to_be_enabled(timeout=5000)
         save_button.click()
+        # aguarda o modal sumir para evitar reabrir novo contato
+        try:
+            page.wait_for_selector("records-modal-lwc-detail-panel-wrapper", state="detached", timeout=10000)
+        except Exception:
+            pass
         page.wait_for_timeout(500)
 
     with allure.step("Then o nome atualizado deve aparecer"):
@@ -377,6 +392,15 @@ def test_edit_contact_updates_name(page: Page, settings):
         except Exception:
             pass  # alguns toasts mostram apenas o nome antigo; seguimos validando no header
         allure.attach(page.screenshot(full_page=True), "toast-e-header", allure.attachment_type.PNG)
+
+        # fecha o alerta para limpar a tela antes da evidência final
+        toast_close = page.locator("button[title='Fechar'], button[aria-label='Fechar'], button.slds-notify__close").first
+        if toast_close.count() > 0:
+            try:
+                toast_close.click(timeout=2000)
+            except Exception:
+                pass
+        page.wait_for_timeout(300)
 
         header_name = page.locator("lightning-formatted-name").first
         expect(header_name).to_have_text(new_full, timeout=15000)
@@ -396,7 +420,7 @@ def test_edit_contact_updates_name(page: Page, settings):
 @pytest.mark.ui
 @pytest.mark.playwright
 def test_find_contact_named_adff_in_list(page: Page, settings):
-    """Rola a lista inteira, abre o contato de nome 'adff' e exibe por 20s."""
+    """Rola a lista inteira, abre o contato de nome 'adff' e exibe."""
     from tests import conftest as conf
     if not conf.AUTH_STATE_PATH.exists():
         pytest.skip("auth-state.json não encontrado. Rode o teste de login para gerar a sessão.")
@@ -428,7 +452,7 @@ def test_find_contact_named_adff_in_list(page: Page, settings):
         expect(target_row).to_be_visible(timeout=5000)
         allure.attach(page.screenshot(full_page=True), "contato-adff-visivel", allure.attachment_type.PNG)
 
-    with allure.step("And abro o contato 'adff' e mantenho a tela por 20s"):
+    with allure.step("And abro o contato 'adff' e mantenho a tela"):
         open_link = None
         for candidate in [
             target_row.get_by_role("link", name=target_name, exact=True),

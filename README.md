@@ -6,6 +6,7 @@ Guia rapido para rodar e consultar os relatórios (UI e API), com foco em inicia
 - UI: abre a pagina de login do Salesforce e valida campos com Playwright (rapido e estavel) e o mesmo fluxo com Selenium (compatibilidade legada).
 - API: consulta o endpoint de limites do Salesforce usando token.
 - Relatorios: Allure (HTML navegavel), JUnit/XML, JSON, cobertura e logs sanitizados (sem segredos).
+- Contatos (Playwright): cria contato completo, edita sobrenome com sufixo incremental "EDITADO N ..." e abre contato especifico na lista (ex.: "adff").
 
 ## Requisitos rapidos
 - Windows 10+.
@@ -43,6 +44,15 @@ Guia rapido para rodar e consultar os relatórios (UI e API), com foco em inicia
 2) Faça o login manualmente (MFA/token). Ao navegar para o Home, o teste salva `auth-state.json` (na raiz do projeto) e anexa no Allure.
 3) Demais testes UI usam esse `storageState` automaticamente (via `conftest.py`). Se o cookie expirar ou `auth-state.json` for removido, rode o teste de login novamente.
 4) O arquivo `auth-state.json` não deve ser versionado (está listado no `.gitignore`).
+
+### Cenarios de Contatos (Playwright)
+- Criar contato completo: `pytest tests/ui/playwright/test_contact_playwright.py::test_create_contact_full_form -m playwright --headed`
+  - Salva dados do ultimo contato em `test-results/last_contact.json`.
+- Editar contato salvo: `pytest tests/ui/playwright/test_contact_playwright.py::test_edit_contact_updates_name -m playwright --headed`
+  - Le `test-results/last_contact.json`, abre o registro na lista, edita o sobrenome para "EDITADO <contador> <sobrenome original>", valida toast e header.
+  - O contador `editCount` e persistido no mesmo JSON.
+- Localizar contato "adff" na lista e manter tela aberta 20s:
+  `pytest tests/ui/playwright/test_contact_playwright.py::test_find_contact_named_adff_in_list -m playwright --headed`
 
 ### Logging estruturado (pytest + Playwright + Allure)
 - Cada teste Playwright ganha um logger único (stdout + Allure).  
@@ -83,7 +93,9 @@ Guia rapido para rodar e consultar os relatórios (UI e API), com foco em inicia
 - `tests/ui/playwright/test_login_playwright.py`: exemplo Playwright.
 - `tests/ui/selenium/test_login_selenium.py`: exemplo Selenium.
 - `tests/api/test_limits_api.py`: exemplos de API com steps/labels Allure.
+- `tests/ui/playwright/test_contact_playwright.py`: criar/editar/buscar contatos.
 - `.github/workflows/tests.yml`: lint + testes de API + artefatos.
+- `test-results/last_contact.json`: cache do ultimo contato criado/editado (nome, sobrenome, editCount). Nao versionar.
 
 ## Segurança e LGPD
 - `.env` esta no `.gitignore`; nunca suba segredos.
@@ -96,6 +108,7 @@ Guia rapido para rodar e consultar os relatórios (UI e API), com foco em inicia
 - Coleta rapida: `pytest --collect-only`
 - Rodar API com cobertura: `pytest -m api`
 - Ver trace Playwright: `python -m playwright show-trace test-results/traces/<arquivo>.zip`
+- Rodar só o cenário de edição de contato: `pytest tests/ui/playwright/test_contact_playwright.py::test_edit_contact_updates_name -m playwright --headed`
 
 ## CI (GitHub Actions)
 - Workflow `api-tests-and-lint`:

@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from playwright.sync_api import Locator, Page
 
@@ -31,7 +31,7 @@ def _fill_text(locator: Locator, value: str, timeout: int = 3000) -> None:
     locator.fill(value, timeout=timeout)
 
 
-def fillContactFieldByApi(page: Page, api_name: str, value: str, nth: int = 0, timeout: int = 3000) -> None:
+def fillContactFieldByApi(page: Union[Page, Locator], api_name: str, value: str, nth: int = 0, timeout: int = 3000) -> None:
     """
     Preenche um campo do modal de contato pelo API name.
     Prioriza inputs/textarea com atributo name e, em seguida,
@@ -54,7 +54,7 @@ def fillContactFieldByApi(page: Page, api_name: str, value: str, nth: int = 0, t
     _fill_text(target.first, value, timeout=timeout)
 
 
-def select_combobox_option(modal: Page, button_label: str, option_text: str) -> None:
+def select_combobox_option(modal: Union[Page, Locator], button_label: str, option_text: str) -> None:
     """
     Seleciona uma opção em um combobox (lightning-base-combobox) pelo label do botão.
     """
