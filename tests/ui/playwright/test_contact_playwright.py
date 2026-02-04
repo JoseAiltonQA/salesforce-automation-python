@@ -58,9 +58,12 @@ def test_create_contact_full_form(page: Page, settings):
     }
 
     with allure.step("Given estou na home autenticado"):
-        page.goto("https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/page/home")
+        page.goto(
+            "https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/page/home",
+            timeout=90000,
+            wait_until="domcontentloaded",
+        )
         page.wait_for_url("**/lightning/**", timeout=60000)
-        page.wait_for_load_state("domcontentloaded")
         expect(page).to_have_url(re.compile("lightning\\.force\\.com|lightning/page/home|my\\.salesforce\\.com"), timeout=15000)
 
     with allure.step("When abro o menu e clico em Novo contato"):
@@ -204,9 +207,12 @@ def test_edit_contact_updates_name(page: Page, settings):
     new_full = f"{first} {new_last}".strip()
 
     with allure.step("Given estou na lista de contatos autenticado"):
-        page.goto("https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/o/Contact/list?filterName=Recent")
-        page.wait_for_load_state("domcontentloaded")
-        expect(page).to_have_url(re.compile("Contact/list"), timeout=20000)
+        page.goto(
+            "https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/o/Contact/list?filterName=Recent",
+            timeout=90000,
+            wait_until="domcontentloaded",
+        )
+        expect(page).to_have_url(re.compile("Contact/list"), timeout=30000)
         page.wait_for_timeout(7000)
         allure.attach(page.screenshot(full_page=True), "lista-contatos", allure.attachment_type.PNG)
 
@@ -419,6 +425,198 @@ def test_edit_contact_updates_name(page: Page, settings):
 
 @pytest.mark.ui
 @pytest.mark.playwright
+def test_delete_contact_from_record(page: Page, settings):
+    """Abre o contato salvo e o exclui confirmando o modal."""
+    from tests import conftest as conf
+    auth_state = conf.AUTH_STATE_PATH
+    if not auth_state.exists():
+        pytest.skip("auth-state.json não encontrado. Rode o teste de login para gerar a sessão.")
+
+    if not LAST_CONTACT_PATH.exists():
+        pytest.skip("last_contact.json não encontrado. Execute o cenário de criação de contato primeiro.")
+
+    contact_data = json.loads(LAST_CONTACT_PATH.read_text(encoding="utf-8"))
+    first = contact_data.get("firstName", "").strip()
+    last = contact_data.get("lastName", "").strip()
+    old_full = contact_data.get("fullName") or f"{first} {last}".strip()
+    if not old_full.strip():
+        pytest.skip("Nome do contato ausente em last_contact.json.")
+
+    with allure.step("Given estou na lista de contatos autenticado"):
+        page.goto(
+            "https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/o/Contact/list?filterName=Recent",
+            timeout=90000,
+            wait_until="domcontentloaded",
+        )
+        expect(page).to_have_url(re.compile("Contact/list"), timeout=30000)
+        page.wait_for_timeout(7000)
+        allure.attach(page.screenshot(full_page=True), "lista-contatos", allure.attachment_type.PNG)
+
+    with allure.step("When abro o contato salvo pela lista"):
+        row = page.locator("tbody tr").filter(has_text=old_full).first
+
+        def _try_search():
+            search_box = None
+            for candidate in [
+                page.get_by_placeholder("Pesquisar esta lista...", exact=False),
+                page.get_by_placeholder("Search this list...", exact=False),
+                page.locator("input[type='search']").first,
+            ]:
+                if candidate.count() > 0:
+                    search_box = candidate
+                    break
+            if not search_box or search_box.count() == 0:
+                return False
+
+            try:
+                search_box.wait_for(state="visible", timeout=5000)
+            except Exception:
+                return False
+
+            search_box.fill(old_full)
+            search_box.press("Enter")
+            page.wait_for_timeout(7000)
+            return True
+
+        if row.count() == 0 or not row.is_visible():
+            _try_search()
+            row = page.locator("tbody tr").filter(has_text=old_full).first
+
+        if row.count() == 0 or not row.is_visible():
+            pytest.skip("Contato não encontrado na lista mesmo após buscar.")
+
+        try:
+            row.scroll_into_view_if_needed(timeout=3000)
+        except Exception:
+            pass
+
+        open_link = None
+        for candidate in [
+            row.get_by_role("link", name=old_full, exact=True),
+            row.locator("a[data-refid='recordId']").first,
+            row.locator("a").filter(has_text=old_full).first,
+        ]:
+            if candidate.count() > 0:
+                open_link = candidate
+                break
+
+        if not open_link or open_link.count() == 0:
+            pytest.skip("Link do contato não encontrado na lista.")
+
+        open_link.click()
+        page.wait_for_url("**/lightning/r/Contact/**", timeout=20000)
+        page.wait_for_load_state("domcontentloaded")
+        page.wait_for_timeout(500)
+        allure.attach(page.screenshot(full_page=True), "detalhe-contato", allure.attachment_type.PNG)
+
+    with allure.step("And clico em Excluir"):
+        page.wait_for_timeout(4000)
+        delete_button = None
+        for candidate in [
+            page.locator("[data-target-selection-name='standard__recordPage-RecordDelete']").first,
+            page.locator("button[title='Excluir']").first,
+            page.locator("button[aria-label='Excluir']").first,
+            page.locator("button[name='Delete']").first,
+            page.get_by_role("button", name=re.compile("Excluir|Delete", re.IGNORECASE)).first,
+        ]:
+            if candidate.count() > 0 and candidate.is_visible():
+                delete_button = candidate
+                break
+
+        if delete_button and delete_button.count() > 0:
+            expect(delete_button).to_be_enabled(timeout=5000)
+            delete_button.click()
+        else:
+            actions_dropdown = None
+            for cand in [
+                page.locator("records-lwc-highlights-panel lightning-button-menu button").first,
+                page.locator("one-record-home-flexipage2 lightning-button-menu button").first,
+                page.locator("button[title='Mostrar mais ações'], button[aria-label='Mostrar mais ações']").first,
+                page.locator("lightning-button-menu button").first,
+            ]:
+                if cand.count() > 0:
+                    try:
+                        cand.wait_for(state="visible", timeout=3000)
+                        if "exibição de lista" in (cand.get_attribute("title") or "").lower():
+                            continue
+                        actions_dropdown = cand
+                        break
+                    except Exception:
+                        continue
+
+            if not actions_dropdown or actions_dropdown.count() == 0:
+                pytest.skip("Botão Excluir não encontrado na página do contato.")
+
+            expect(actions_dropdown).to_be_enabled(timeout=5000)
+            actions_dropdown.click()
+
+            menu_delete = page.get_by_role("menuitem", name=re.compile("Excluir contato|Excluir|Delete", re.IGNORECASE))
+            expect(menu_delete).to_be_visible(timeout=5000)
+            menu_delete.click()
+            page.wait_for_timeout(400)
+
+    with allure.step("And confirmo a exclusão no modal"):
+        modal = None
+        for candidate in [
+            page.locator("div.modal-container.slds-modal__container").first,
+            page.locator("records-modal-lwc-detail-panel-wrapper").first,
+            page.locator("div.slds-modal__container").first,
+        ]:
+            if candidate.count() > 0:
+                modal = candidate
+                break
+
+        if not modal or modal.count() == 0:
+            pytest.fail("Modal de confirmação de exclusão não apareceu.")
+
+        try:
+            modal.wait_for(state="visible", timeout=7000)
+        except Exception:
+            pass
+
+        confirm_button = None
+        for candidate in [
+            modal.get_by_role("button", name=re.compile("^Excluir$", re.IGNORECASE)),
+            modal.get_by_role("button", name=re.compile("^Delete$", re.IGNORECASE)),
+            modal.locator("button.uiButton--brand, button.slds-button_brand").filter(has_text=re.compile("Excluir|Delete", re.IGNORECASE)).first,
+        ]:
+            if candidate.count() > 0:
+                confirm_button = candidate
+                break
+
+        if not confirm_button or confirm_button.count() == 0:
+            pytest.fail("Botão de confirmação de exclusão não encontrado no modal.")
+
+        expect(confirm_button).to_be_enabled(timeout=5000)
+        confirm_button.click()
+        try:
+            modal.wait_for(state="hidden", timeout=10000)
+        except Exception:
+            pass
+        page.wait_for_timeout(700)
+
+    with allure.step("Then devo ver a exclusão concluída e o contato some da lista"):
+        toast = page.locator("span.toastMessage")
+        expect(toast).to_contain_text(re.compile("foi exclu[ií]do|Exclusão concluída|excluído", re.IGNORECASE), timeout=15000)
+        allure.attach(page.screenshot(full_page=True), "toast-exclusao", allure.attachment_type.PNG)
+
+        page.goto(
+            "https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/o/Contact/list?filterName=Recent",
+            timeout=90000,
+            wait_until="domcontentloaded",
+        )
+        page.wait_for_timeout(5000)
+        _try_search()
+        rows = page.locator("tbody tr").filter(has_text=old_full)
+        try:
+            expect(rows).to_have_count(0, timeout=12000)
+        except Exception:
+            allure.attach(page.screenshot(full_page=True), "lista-apos-excluir", allure.attachment_type.PNG)
+            pytest.fail(f"Contato '{old_full}' ainda aparece na lista após exclusão.")
+
+
+@pytest.mark.ui
+@pytest.mark.playwright
 def test_find_contact_named_adff_in_list(page: Page, settings):
     """Rola a lista inteira, abre o contato de nome 'adff' e exibe."""
     from tests import conftest as conf
@@ -428,9 +626,12 @@ def test_find_contact_named_adff_in_list(page: Page, settings):
     target_name = "adff"
 
     with allure.step("Given estou na lista de contatos"):
-        page.goto("https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/o/Contact/list?filterName=Recent")
-        page.wait_for_load_state("domcontentloaded")
-        expect(page).to_have_url(re.compile("Contact/list"), timeout=20000)
+        page.goto(
+            "https://orgfarm-1a5e0b208b-dev-ed.develop.lightning.force.com/lightning/o/Contact/list?filterName=Recent",
+            timeout=90000,
+            wait_until="domcontentloaded",
+        )
+        expect(page).to_have_url(re.compile("Contact/list"), timeout=30000)
 
     rows = page.locator("tbody tr")
     found = False
